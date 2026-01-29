@@ -1,0 +1,64 @@
+/* ============================================
+   RIALO REACTIVE INTENTS - CLEAN DESIGN SYSTEM
+   Single source of truth for all styles
+   ============================================ */
+
+/* Reset */
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Color Variables */
+:root {
+    /* Primary Palette */
+    --c-obsidian: #0a0908;
+    --c-gunmetal: #22333b;
+    --c-bone: #eae0d5;
+    --c-khaki: #c6ac8f;
+    --c-walnut: #5e503f;
+
+    /* Accent Palette */
+    --c-oxford: #202c39;
+    --c-charcoal: #283845;
+    --c-sage: #b8b08d;
+    --c-gold: #f2d492;
+    --c-coral: #f29559;
+}
+
+/* Base */
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--c-obsidian);
+    color: var(--c-bone);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Links */
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--c-obsidian);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--c-walnut);
+    border-radius: 3px;
+}

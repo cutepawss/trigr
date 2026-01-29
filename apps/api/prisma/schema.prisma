@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  passwordHash String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  projects      Project[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  details      Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workflows Workflow[]
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@map("projects")
+}
+
+model Workflow {
+  id          String   @id @default(uuid())
+  projectId   String
+  name        String
+  description String?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodes             WorkflowNode[]
+  edges             WorkflowEdge[]
+  versions          WorkflowVersion[]
+  deployments       Deployment[]
+  compiledArtifacts CompiledArtifact[]
+  gasEstimates      GasEstimate[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("workflows")
+}
+
+model WorkflowNode {
+  id         String   @id @default(uuid())
+  workflowId String
+  nodeId     String
+  type       String
+  config     Json
+  position   Json
+  createdAt  DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, nodeId])
+  @@index([workflowId])
+  @@map("workflow_nodes")
+}
+
+model WorkflowEdge {
+  id           String   @id @default(uuid())
+  workflowId   String
+  sourceNodeId String
+  targetNodeId String
+  createdAt    DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, sourceNodeId, targetNodeId])
+  @@index([workflowId])
+  @@map("workflow_edges")
+}
+
+model WorkflowVersion {
+  id            String   @id @default(uuid())
+  workflowId    String
+  versionNumber Int
+  snapshot      Json
+  createdAt     DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, versionNumber])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+model Deployment {
+  id               String   @id @default(uuid())
+  workflowId       String
+  status           String
+  txHash           String?  @unique
+  contractAddress  String?  @unique
+  compiledArtifact String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workflow   Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  executions Execution[]
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([txHash])
+  @@index([contractAddress])
+  @@map("deployments")
+}
+
+model Execution {
+  id             String   @id @default(uuid())
+  deploymentId   String
+  executionIndex Int
+  status         String
+  inputState     Json?
+  outputState    Json?
+  gasUsed        Int?
+  trace          Json?
+  createdAt      DateTime @default(now())
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@unique([deploymentId, executionIndex])
+  @@index([deploymentId])
+  @@index([status])
+  @@map("executions")
+}
+
+model CompiledArtifact {
+  id           String   @id @default(uuid())
+  workflowId   String
+  artifactType String
+  content      String
+  createdAt    DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("compiled_artifacts")
+}
+
+model GasEstimate {
+  id           String   @id @default(uuid())
+  workflowId   String
+  estimatedGas Int
+  breakdown    Json
+  createdAt    DateTime @default(now())
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("gas_estimates")
+}

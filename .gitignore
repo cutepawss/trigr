@@ -1,0 +1,128 @@
+# ============================================
+# 🛡️ TRIGR - Security-First .gitignore
+# ============================================
+
+# ======= CRITICAL: Environment & Secrets =======
+.env
+.env.*
+!.env.example
+!.env.template
+*.local
+.secret*
+secrets/
+credentials/
+
+# Private Keys (NEVER commit these)
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+id_rsa*
+*.gpg
+
+# ======= Dependencies =======
+node_modules/
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ======= Build Outputs =======
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+*.tsbuildinfo
+
+# ======= Caches =======
+.cache/
+.turbo/
+.vercel/
+.netlify/
+*.cache
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# ======= Testing & Coverage =======
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+playwright/.cache/
+.vitest/
+
+# ======= Database =======
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+/prisma/*.db
+/prisma/*.db-journal
+apps/api/prisma/dev.db*
+apps/api/prisma/.env
+
+# ======= Logs =======
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ======= OS Files =======
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ======= IDE & Editors =======
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.code-workspace
+
+# ======= Development Artifacts =======
+*.tgz
+*.tar.gz
+*.zip
+.tmp/
+temp/
+tmp/
+
+# ======= Security Scanning =======
+# Reports from security tools
+security-report.*
+vulnerability-report.*
+audit-results.*
+
+# ======= Platform Specific =======
+# Prisma
+prisma/.env
+
+# Next.js
+.next/
+out/
+
+# TypeScript
+*.tsbuildinfo
+
+# ======= Miscellaneous =======
+.history/
+.sonarlint/
