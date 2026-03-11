@@ -39,10 +39,12 @@ export interface Intent {
 }
 
 export interface Predicate {
-    type: 'price' | 'time' | 'balance' | 'custom';
+    type: 'price' | 'ratio' | 'time' | 'balance' | 'custom';
     operator: 'gte' | 'lte' | 'eq' | 'interval';
     value: string;
-    token?: string;
+    token?: string;        // For price predicates
+    tokenA?: string;       // For ratio predicates (numerator)
+    tokenB?: string;       // For ratio predicates (denominator)
     oracleSource?: string;
 }
 
@@ -51,11 +53,13 @@ export interface CreateIntentInput {
     tokenIn: string;
     tokenOut: string;
     amountIn: string;
-    targetPrice?: string;
-    slippage: string;     // percentage
-    deadline: number;     // hours
-    predicateOperator?: 'gte' | 'lte';  // For limit orders: lte = execute when price drops to target
-    isStopLoss?: boolean; // If true, track tokenIn price instead of tokenOut
+    targetPrice?: string;     // For USD-based limit orders
+    targetRatio?: string;     // For pair-based ratio orders (e.g., "0.035" for ETH/BTC)
+    slippage: string;         // percentage
+    deadline: number;         // hours
+    predicateOperator?: 'gte' | 'lte';  // For limit orders
+    isStopLoss?: boolean;     // If true, track tokenIn price
+    isPairBased?: boolean;    // If true, use ratio instead of USD price
 }
 
 export interface IntentSimulation {

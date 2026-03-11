@@ -34,7 +34,7 @@ export default function LandingPage() {
                     <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
                         <a href="#how-it-works" style={{ fontSize: '14px', color: muted, fontWeight: 500 }}>How It Works</a>
                         <a href="#features" style={{ fontSize: '14px', color: muted, fontWeight: 500 }}>Features</a>
-                        <a href="https://www.rialo.io/learn/reactive-transactions-on-rialo" target="_blank" style={{ fontSize: '14px', color: muted, fontWeight: 500 }}>Docs</a>
+                        <a href="https://learn.rialo.io/tutorials/reactive/" target="_blank" style={{ fontSize: '14px', color: muted, fontWeight: 500 }}>Docs</a>
                         <Link href="/trade" style={{ padding: '10px 20px', background: `linear-gradient(135deg, ${accent} 0%, ${accentLight} 100%)`, borderRadius: '10px', fontWeight: 600, fontSize: '14px', color: '#fff' }}>
                             Launch App
                         </Link>
@@ -60,7 +60,7 @@ export default function LandingPage() {
                         <Link href="/trade" style={{ padding: '16px 40px', background: `linear-gradient(135deg, ${accent} 0%, ${accentLight} 100%)`, borderRadius: '12px', fontWeight: 700, fontSize: '16px', color: '#fff', boxShadow: '0 4px 16px rgba(45,35,46,0.25)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                             Start Trading <span style={{ fontSize: '18px' }}>→</span>
                         </Link>
-                        <a href="https://reactive-transactions.learn.rialo.io/" target="_blank" style={{ padding: '16px 32px', backgroundColor: card, borderRadius: '12px', fontWeight: 600, fontSize: '16px', color: text, border: `1px solid ${border}` }}>
+                        <a href="https://learn.rialo.io/tutorials/reactive/" target="_blank" style={{ padding: '16px 32px', backgroundColor: card, borderRadius: '12px', fontWeight: 600, fontSize: '16px', color: text, border: `1px solid ${border}` }}>
                             Learn More
                         </a>
                     </div>
@@ -171,7 +171,7 @@ export default function LandingPage() {
                     <div style={{ display: 'flex', gap: '40px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         {[
                             { label: 'No Bots Required', icon: '🤖' },
-                            { label: 'Gas Efficient', icon: '⛽' },
+                            { label: 'Stake-for-Service', icon: '💎' },
                             { label: 'MEV Protected', icon: '🔒' },
                             { label: 'Atomic Execution', icon: '⚛️' },
                         ].map(item => (
@@ -201,7 +201,7 @@ export default function LandingPage() {
                         <span style={{ fontWeight: 600, fontSize: '15px', color: accent }}>Trigr</span>
                     </div>
                     <div style={{ display: 'flex', gap: '24px', alignItems: 'center', fontSize: '13px', color: muted }}>
-                        <a href="https://reactive-transactions.learn.rialo.io/" target="_blank" style={{ color: muted }}>Rialo Docs</a>
+                        <a href="https://learn.rialo.io/tutorials/reactive/" target="_blank" style={{ color: muted }}>Rialo Docs</a>
                         <a href="https://www.rialo.io" target="_blank" style={{ color: muted }}>Rialo.io</a>
                         <span>•</span>
                         <span>Built for the Rialo Hackathon</span>

@@ -61,6 +61,17 @@ export default function TradePage() {
     const [pricesLoading, setPricesLoading] = useState(true);
     const [intentsLoading, setIntentsLoading] = useState(true);
 
+    // Ratio trading state
+    const [currentRatio, setCurrentRatio] = useState<{ ratio: string; priceA: string; priceB: string } | null>(null);
+    const [minReceive, setMinReceive] = useState(''); // User-friendly: min output in tokenOut units
+
+    // Detect if this is a crypto-to-crypto trade (neither is stablecoin)
+    const stablecoins = ['USDC', 'USDT', 'DAI', 'BUSD'];
+    const isCryptoToCrypto = !stablecoins.includes(tokenIn) && !stablecoins.includes(tokenOut);
+
+    // Calculate exchange rate: how many tokenOut per 1 tokenIn
+    const exchangeRate = currentRatio ? parseFloat(currentRatio.ratio) : 0;
+
     // Mock wallet balances for demo
     const [balances] = useState<Record<string, number>>({
         USDC: 10000.00,
@@ -161,6 +172,29 @@ export default function TradePage() {
         setIntentsLoading(false);
     }, []);
 
+    // Fetch ratio for crypto-to-crypto pairs
+    const fetchRatio = useCallback(async () => {
+        if (!stablecoins.includes(tokenIn) && !stablecoins.includes(tokenOut)) {
+            try {
+                const res = await fetch(`${API_BASE}/intents/ratio/${tokenIn}/${tokenOut}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setCurrentRatio({
+                            ratio: data.data.ratioFormatted,
+                            priceA: data.data.priceA_USD,
+                            priceB: data.data.priceB_USD,
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch ratio:', err);
+            }
+        } else {
+            setCurrentRatio(null);
+        }
+    }, [tokenIn, tokenOut]);
+
     // Initial fetch and polling
     useEffect(() => {
         if (mounted) {
@@ -180,19 +214,34 @@ export default function TradePage() {
         }
     }, [mounted, fetchPrices, fetchIntents]);
 
+    // Fetch ratio when tokens change
+    useEffect(() => {
+        if (mounted) {
+            fetchRatio();
+        }
+    }, [mounted, tokenIn, tokenOut, fetchRatio]);
+
+    // Swap tokens function
+    const handleSwapTokens = () => {
+        const tempIn = tokenIn;
+        setTokenIn(tokenOut);
+        setTokenOut(tempIn);
+        setMinReceive('');
+    };
+
     const priceIn = prices[tokenIn]?.price || 0;
     const priceOut = prices[tokenOut]?.price || 0;
 
     // Stablecoins - we don't want to chart these (boring flat lines)
-    const stablecoins = ['USDC', 'USDT', 'DAI', 'BUSD'];
+    const stablecoinsConst = ['USDC', 'USDT', 'DAI', 'BUSD'];
 
     // Always show the "interesting" (non-stablecoin) asset in the chart
     // If tokenIn is stablecoin (buying crypto with stables), show tokenOut
     // If tokenOut is stablecoin (selling crypto for stables), show tokenIn
     // If neither/both are stablecoins, prefer tokenIn
     const getChartToken = () => {
-        const tokenInIsStable = stablecoins.includes(tokenIn);
-        const tokenOutIsStable = stablecoins.includes(tokenOut);
+        const tokenInIsStable = stablecoinsConst.includes(tokenIn);
+        const tokenOutIsStable = stablecoinsConst.includes(tokenOut);
 
         if (tokenInIsStable && !tokenOutIsStable) return tokenOut; // Buying crypto with stables
         if (!tokenInIsStable && tokenOutIsStable) return tokenIn;  // Selling crypto for stables
@@ -209,7 +258,11 @@ export default function TradePage() {
     const getPredicate = () => {
         switch (orderType) {
             case 'market': return 'Execute immediately';
-            case 'limit': return `price(${trackedToken}) ≤ $${targetPrice || '0'}`;
+            case 'limit':
+                if (isCryptoToCrypto && minReceive && amountIn) {
+                    return `when 1 ${tokenIn} ≥ ${(parseFloat(minReceive) / parseFloat(amountIn)).toFixed(4)} ${tokenOut}`;
+                }
+                return `price(${trackedToken}) ≤ $${targetPrice || '0'}`;
             case 'dca': return `every ${frequency === 'hourly' ? '1h' : frequency === 'daily' ? '24h' : '7d'}`;
             case 'stop': return `price(${trackedToken}) ≤ $${targetPrice || '0'}`;
         }
@@ -225,16 +278,22 @@ export default function TradePage() {
             // For limit orders: use 'lte' so it executes when price DROPS to target
             // This is correct for buy limits (buy when cheaper) and stop-loss (sell when price falls)
             // isStopLoss tells backend to track tokenIn price (the asset being sold)
+            // For crypto-to-crypto, use ratio-based trading with 'gte' (execute when ratio rises)
             const intentData = {
                 type: orderType === 'stop' ? 'limit' : orderType, // API treats stop as limit with lte
                 tokenIn,
                 tokenOut,
                 amountIn,
-                targetPrice: targetPrice || undefined,
+                targetPrice: isCryptoToCrypto ? undefined : (targetPrice || undefined),
+                // Convert minReceive to ratio: minReceive / amountIn = target exchange rate
+                targetRatio: isCryptoToCrypto && minReceive && amountIn
+                    ? (parseFloat(minReceive) / parseFloat(amountIn)).toString()
+                    : undefined,
                 slippage,
                 deadline: 24,
-                predicateOperator: (orderType === 'limit' || orderType === 'stop') ? 'lte' : undefined,
+                predicateOperator: isCryptoToCrypto ? 'gte' : ((orderType === 'limit' || orderType === 'stop') ? 'lte' : undefined),
                 isStopLoss: orderType === 'stop', // Backend uses this to determine which token's price to track
+                isPairBased: isCryptoToCrypto,
                 frequency: orderType === 'dca' ? frequency : undefined,
                 executions: orderType === 'dca' ? parseInt(executions) : undefined,
             };
@@ -287,6 +346,16 @@ export default function TradePage() {
         if (n >= 1000) return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         if (n >= 1) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    };
+
+    // Smart ratio/exchange rate formatter
+    const fmtRate = (n: number | string) => {
+        const num = typeof n === 'string' ? parseFloat(n) : n;
+        if (isNaN(num)) return '...';
+        if (num >= 1000) return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+        if (num >= 1) return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (num >= 0.01) return num.toFixed(4);
+        return num.toFixed(6);
     };
 
     const green = '#10b981';
@@ -381,7 +450,15 @@ export default function TradePage() {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: muted, fontSize: '18px', border: `1px solid ${border}` }}>↓</div>
+                        <button onClick={handleSwapTokens} style={{
+                            width: '36px', height: '36px', borderRadius: '50%', backgroundColor: bg,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: muted, fontSize: '18px', border: `1px solid ${border}`,
+                            cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                            onMouseOver={e => e.currentTarget.style.backgroundColor = accent + '20'}
+                            onMouseOut={e => e.currentTarget.style.backgroundColor = bg}
+                        >⇅</button>
                     </div>
 
                     <div style={{ marginBottom: '20px' }}>
@@ -402,18 +479,46 @@ export default function TradePage() {
                     {/* Conditional Inputs */}
                     {(orderType === 'limit' || orderType === 'stop') && (
                         <div style={{ marginBottom: '20px' }}>
-                            <label style={{ fontSize: '12px', color: muted, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px', fontWeight: 500 }}>
-                                {orderType === 'limit' ? 'Target Price' : 'Stop Price'}
-                            </label>
-                            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: bg, padding: '14px', borderRadius: '12px', border: `1px solid ${border}` }}>
-                                <span style={{ color: muted, marginRight: '8px', fontSize: '18px' }}>$</span>
-                                <input type="number" placeholder={trackedPrice > 0 ? fmt(trackedPrice) : '0.00'} value={targetPrice} onChange={e => setTargetPrice(e.target.value)} style={{
-                                    flex: 1, backgroundColor: 'transparent', border: 'none', color: text, fontSize: '20px', fontWeight: 600, outline: 'none', fontFamily: 'monospace',
-                                }} />
-                            </div>
-                            <div style={{ fontSize: '12px', color: muted, marginTop: '6px' }}>
-                                Current {trackedToken}: ${trackedPrice > 0 ? fmt(trackedPrice) : 'Loading...'}
-                            </div>
+
+                            {isCryptoToCrypto ? (
+                                // Min Receive input for crypto-to-crypto (user-friendly)
+                                <>
+                                    <label style={{ fontSize: '12px', color: muted, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                                        Minimum Receive
+                                    </label>
+                                    <div style={{ display: 'flex', alignItems: 'center', backgroundColor: bg, padding: '14px', borderRadius: '12px', border: `1px solid ${border}` }}>
+                                        <input type="number" step="0.0001" placeholder={exchangeRate && amountIn ? (parseFloat(amountIn) * exchangeRate).toFixed(4) : '0.00'} value={minReceive} onChange={e => setMinReceive(e.target.value)} style={{
+                                            flex: 1, backgroundColor: 'transparent', border: 'none', color: text, fontSize: '20px', fontWeight: 600, outline: 'none', fontFamily: 'monospace',
+                                        }} />
+                                        <span style={{ color: accent, marginLeft: '8px', fontSize: '16px', fontWeight: 600 }}>{tokenOut}</span>
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: muted, marginTop: '8px', backgroundColor: `${accent}08`, padding: '10px', borderRadius: '8px' }}>
+                                        <div style={{ marginBottom: '4px' }}>
+                                            <strong>Current rate:</strong> 1 {tokenIn} ≈ {fmtRate(exchangeRate)} {tokenOut}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '16px', color: text }}>
+                                            <span>{tokenIn}: ${fmt(parseFloat(currentRatio?.priceA || '0'))}</span>
+                                            <span>{tokenOut}: ${fmt(parseFloat(currentRatio?.priceB || '0'))}</span>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                // USD price input for stablecoin pairs
+                                <>
+                                    <label style={{ fontSize: '12px', color: muted, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                                        {orderType === 'limit' ? 'Target Price' : 'Stop Price'}
+                                    </label>
+                                    <div style={{ display: 'flex', alignItems: 'center', backgroundColor: bg, padding: '14px', borderRadius: '12px', border: `1px solid ${border}` }}>
+                                        <span style={{ color: muted, marginRight: '8px', fontSize: '18px' }}>$</span>
+                                        <input type="number" placeholder={trackedPrice > 0 ? fmt(trackedPrice) : '0.00'} value={targetPrice} onChange={e => setTargetPrice(e.target.value)} style={{
+                                            flex: 1, backgroundColor: 'transparent', border: 'none', color: text, fontSize: '20px', fontWeight: 600, outline: 'none', fontFamily: 'monospace',
+                                        }} />
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: muted, marginTop: '6px' }}>
+                                        Current {trackedToken}: ${trackedPrice > 0 ? fmt(trackedPrice) : 'Loading...'}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -476,16 +581,39 @@ export default function TradePage() {
                     <div style={{ backgroundColor: card, borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `1px solid ${border}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: TOKEN_CONFIG[chartToken]?.color || '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '22px', fontWeight: 700 }}>{TOKEN_CONFIG[chartToken]?.icon}</div>
+                                {isCryptoToCrypto ? (
+                                    // Dual token icons for pair
+                                    <div style={{ display: 'flex', marginRight: '-8px' }}>
+                                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: TOKEN_CONFIG[tokenIn]?.color || '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '18px', fontWeight: 700, border: '2px solid #fff', zIndex: 2 }}>{TOKEN_CONFIG[tokenIn]?.icon}</div>
+                                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: TOKEN_CONFIG[tokenOut]?.color || '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '18px', fontWeight: 700, marginLeft: '-12px', border: '2px solid #fff', zIndex: 1 }}>{TOKEN_CONFIG[tokenOut]?.icon}</div>
+                                    </div>
+                                ) : (
+                                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: TOKEN_CONFIG[chartToken]?.color || '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '22px', fontWeight: 700 }}>{TOKEN_CONFIG[chartToken]?.icon}</div>
+                                )}
                                 <div>
-                                    <div style={{ fontSize: '20px', fontWeight: 700, color: text }}>{chartToken}/USDC</div>
-                                    <div style={{ fontSize: '14px', color: muted }}>{TOKEN_CONFIG[chartToken]?.name}</div>
+                                    <div style={{ fontSize: '20px', fontWeight: 700, color: text }}>
+                                        {isCryptoToCrypto ? `${tokenIn}/${tokenOut}` : `${chartToken}/USDC`}
+                                    </div>
+                                    <div style={{ fontSize: '14px', color: muted }}>
+                                        {isCryptoToCrypto ? 'Exchange Rate' : TOKEN_CONFIG[chartToken]?.name}
+                                    </div>
                                 </div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
                                 {pricesLoading ? (
                                     <div style={{ fontSize: '20px', color: muted }}>Loading...</div>
+                                ) : isCryptoToCrypto ? (
+                                    // Show exchange rate for crypto-to-crypto
+                                    <>
+                                        <div style={{ fontSize: '28px', fontWeight: 700, fontFamily: 'monospace', color: text }}>
+                                            1 = {fmtRate(exchangeRate)} {tokenOut}
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: muted, marginTop: '4px' }}>
+                                            {tokenIn}: ${fmt(parseFloat(currentRatio?.priceA || '0'))} | {tokenOut}: ${fmt(parseFloat(currentRatio?.priceB || '0'))}
+                                        </div>
+                                    </>
                                 ) : (
+                                    // Show USD price for stablecoin pairs
                                     <>
                                         <div style={{ fontSize: '32px', fontWeight: 700, fontFamily: 'monospace', color: text }}>
                                             ${prices[chartToken] ? fmt(prices[chartToken].price) : '0.00'}

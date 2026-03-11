@@ -35,7 +35,21 @@ export class IntentService {
         const nonce = SecurityService.getNonce(userId);
 
         // Build predicate based on intent type
-        const predicate = this.buildPredicate(input);
+        let predicate = this.buildPredicate(input);
+
+        // For limit orders, auto-detect operator based on target vs current price
+        if (input.type === 'limit' && input.targetPrice && predicate.token) {
+            const currentPriceData = await OracleService.getPrice(predicate.token);
+            const currentPrice = parseFloat(currentPriceData.price);
+            const targetPrice = parseFloat(input.targetPrice);
+
+            // If target > current, user wants to execute when price RISES -> gte
+            // If target < current, user wants to execute when price DROPS -> lte
+            if (!input.isStopLoss) {
+                predicate.operator = targetPrice > currentPrice ? 'gte' : 'lte';
+            }
+            // For stop-loss, always use 'lte' (execute when drops to or below)
+        }
 
         // Calculate deadline
         const deadline = now + (input.deadline * 60 * 60 * 1000); // hours to ms
@@ -72,27 +86,33 @@ export class IntentService {
     /**
      * Build predicate from input
      * For limit orders:
-     * - BUY limit: execute when price drops TO or BELOW target (lte)
-     * - SELL limit/stop-loss: execute when price drops TO or BELOW target (lte) for stop-loss
-     * - SELL limit (take-profit): execute when price rises TO or ABOVE target (gte)
+     * - Crypto-to-crypto: use ratio predicate (tokenIn/tokenOut ratio)
+     * - Crypto-to-stablecoin or Stablecoin-to-crypto: use price predicate
      */
     private static buildPredicate(input: CreateIntentInput): Predicate {
         switch (input.type) {
             case 'limit':
-                // Use the operator from frontend if provided, otherwise determine based on logic
-                const operator = input.predicateOperator || 'lte';
-
-                // Stablecoins - we track the non-stablecoin asset
                 const STABLECOINS = ['USDC', 'USDT', 'DAI', 'BUSD'];
                 const tokenInIsStable = STABLECOINS.includes(input.tokenIn);
                 const tokenOutIsStable = STABLECOINS.includes(input.tokenOut);
+                const isCryptoToCrypto = !tokenInIsStable && !tokenOutIsStable;
 
-                // Determine which token's price to track:
-                // - If tokenIn is stablecoin (buying crypto) -> track tokenOut
-                // - If tokenOut is stablecoin (selling crypto) -> track tokenIn  
-                // - isStopLoss flag also forces tokenIn tracking
+                // Crypto-to-crypto: use ratio predicate
+                if (isCryptoToCrypto && input.targetRatio) {
+                    const operator: 'gte' | 'lte' = input.predicateOperator || 'gte';
+                    return {
+                        type: 'ratio',
+                        operator,
+                        value: input.targetRatio,
+                        tokenA: input.tokenIn,
+                        tokenB: input.tokenOut,
+                        oracleSource: 'aggregated',
+                    };
+                }
+
+                // Stablecoin involved: use price predicate
                 let predicateToken: string;
-                if (input.isStopLoss || (!tokenInIsStable && tokenOutIsStable)) {
+                if (!tokenInIsStable && tokenOutIsStable) {
                     predicateToken = input.tokenIn; // Selling crypto for stables
                 } else if (tokenInIsStable && !tokenOutIsStable) {
                     predicateToken = input.tokenOut; // Buying crypto with stables
@@ -100,13 +120,25 @@ export class IntentService {
                     predicateToken = input.tokenIn; // Default
                 }
 
+                let operator: 'gte' | 'lte';
+                if (input.predicateOperator) {
+                    operator = input.predicateOperator as 'gte' | 'lte';
+                } else if (input.isStopLoss) {
+                    operator = 'lte';
+                } else if (!tokenInIsStable && tokenOutIsStable) {
+                    operator = 'gte'; // Take-profit: execute when price rises
+                } else {
+                    operator = 'lte'; // Limit buy: execute when price drops
+                }
+
                 return {
                     type: 'price',
-                    operator: operator as 'gte' | 'lte',
+                    operator,
                     value: input.targetPrice || '0',
                     token: predicateToken,
                     oracleSource: 'aggregated',
                 };
+
             case 'dca':
                 return {
                     type: 'time',

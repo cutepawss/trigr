@@ -1,7 +1,15 @@
 /* ============================================
    REACTIVE EXECUTION ENGINE
-   Professional-grade intent execution engine
-   simulating Rialo's native reactive layer
+   Simulates Rialo's native reactive execution
+   layer. In production, validators evaluate
+   predicates every block and execute matching
+   intents deterministically inside consensus.
+   
+   Execution costs are covered by Rialo's
+   Stake-for-Service (SfS) model — staking yield
+   is routed to the ServicePaymaster (SPM) which
+   mints service credits to pay for gas, storage,
+   and scheduled executions.
    ============================================ */
 
 import { EventEmitter } from 'events';
@@ -272,6 +280,9 @@ export class ReactiveExecutionEngine extends EventEmitter {
             case 'price':
                 return await this.evaluatePricePredicate(intent);
 
+            case 'ratio':
+                return await this.evaluateRatioPredicate(intent);
+
             case 'time':
                 return this.evaluateTimePredicate(intent);
 
@@ -298,10 +309,58 @@ export class ReactiveExecutionEngine extends EventEmitter {
                 predicate.value
             );
 
+            // Debug logging
+            logger.info('[RXE] Predicate evaluation', {
+                intentId: intent.id.slice(0, 8),
+                token,
+                operator: predicate.operator,
+                targetValue: predicate.value,
+                currentPrice: result.currentPrice,
+                satisfied: result.satisfied,
+                reason: result.reason,
+            });
+
             return result.satisfied;
 
         } catch (error: any) {
             logger.error('[RXE] Price predicate evaluation failed', {
+                intentId: intent.id,
+                error: error.message,
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Evaluate ratio-based predicate (for crypto-to-crypto pairs)
+     */
+    private async evaluateRatioPredicate(intent: Intent): Promise<boolean> {
+        const { predicate } = intent;
+        const tokenA = predicate.tokenA || intent.tokenIn;
+        const tokenB = predicate.tokenB || intent.tokenOut;
+
+        try {
+            const result = await OracleService.evaluateRatioPredicate(
+                tokenA,
+                tokenB,
+                predicate.operator as 'gte' | 'lte' | 'eq',
+                predicate.value
+            );
+
+            // Debug logging
+            logger.info('[RXE] Ratio predicate evaluation', {
+                intentId: intent.id.slice(0, 8),
+                pair: `${tokenA}/${tokenB}`,
+                operator: predicate.operator,
+                targetRatio: predicate.value,
+                currentRatio: result.currentRatio,
+                satisfied: result.satisfied,
+            });
+
+            return result.satisfied;
+
+        } catch (error: any) {
+            logger.error('[RXE] Ratio predicate evaluation failed', {
                 intentId: intent.id,
                 error: error.message,
             });
@@ -507,6 +566,12 @@ export class ReactiveExecutionEngine extends EventEmitter {
 
     /**
      * Calculate gas used (mock)
+     * 
+     * In production Rialo, execution costs are paid via
+     * Stake-for-Service (SfS) service credits rather than
+     * traditional gas. The ServicePaymaster (SPM) converts
+     * staking yield into credits that cover gas, storage,
+     * and recurring execution costs automatically.
      */
     private calculateGas(intent: Intent): string {
         const baseGas = 150000;

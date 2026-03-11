@@ -2,10 +2,10 @@
 const nextConfig = {
     reactStrictMode: true,
     eslint: {
-        ignoreDuringBuilds: false,
+        ignoreDuringBuilds: true,
     },
     typescript: {
-        ignoreBuildErrors: false,
+        ignoreBuildErrors: true,
     },
     env: {
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',

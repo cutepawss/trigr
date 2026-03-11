@@ -1,7 +1,15 @@
 /* ============================================
    ORACLE SERVICE
-   Multi-source price aggregation with TWAP
-   Real prices from CoinGecko API
+   Simulates Rialo's validator-attested oracle
+   data and webcalls feature.
+   
+   In production, Rialo validators attest to
+   external data (price feeds, APIs) directly
+   inside consensus — no external oracle networks
+   like Chainlink or Pyth are needed.
+   
+   Currently uses CoinGecko as a placeholder
+   data source for simulation.
    ============================================ */
 
 import { OraclePrice } from '../types/intent.types';
@@ -101,7 +109,7 @@ export class OracleService {
     static async getPricesMultiSource(token: string): Promise<OraclePrice[]> {
         await this.fetchRealPrices();
 
-        const sources = ['chainlink', 'pyth', 'uniswap', 'band'];
+        const sources = ['rialo-validator-1', 'rialo-validator-2', 'rialo-validator-3', 'rialo-webcall'];
         const prices: OraclePrice[] = [];
 
         const symbol = token.toUpperCase();
@@ -300,6 +308,70 @@ export class OracleService {
             reason: satisfied
                 ? `Condition met: ${current} ${operator} ${target}`
                 : `Waiting: ${current} ${operator === 'gte' ? '<' : '>'} ${target}`,
+        };
+    }
+    /* ============================================
+       RATIO CALCULATION FOR PAIR TRADING
+       ============================================ */
+
+    /**
+     * Get ratio between two tokens (tokenA/tokenB)
+     * e.g., getRatio('ETH', 'BTC') returns how many BTC per 1 ETH
+     */
+    static async getRatio(tokenA: string, tokenB: string): Promise<{
+        ratio: number;
+        tokenA: string;
+        tokenB: string;
+        priceA_USD: number;
+        priceB_USD: number;
+        timestamp: number;
+    }> {
+        const [priceA, priceB] = await Promise.all([
+            this.getPrice(tokenA),
+            this.getPrice(tokenB),
+        ]);
+
+        const priceA_USD = parseFloat(priceA.price);
+        const priceB_USD = parseFloat(priceB.price);
+        const ratio = priceA_USD / priceB_USD;
+
+        return {
+            ratio,
+            tokenA: tokenA.toUpperCase(),
+            tokenB: tokenB.toUpperCase(),
+            priceA_USD,
+            priceB_USD,
+            timestamp: Date.now(),
+        };
+    }
+
+    /**
+     * Evaluate ratio-based predicate
+     * e.g., "execute when ETH/BTC ratio >= 0.035"
+     */
+    static async evaluateRatioPredicate(
+        tokenA: string,
+        tokenB: string,
+        operator: 'gte' | 'lte' | 'eq',
+        targetRatio: string
+    ): Promise<{ satisfied: boolean; currentRatio: string; reason: string }> {
+        const ratioData = await this.getRatio(tokenA, tokenB);
+        const current = ratioData.ratio;
+        const target = parseFloat(targetRatio);
+
+        let satisfied = false;
+        switch (operator) {
+            case 'gte': satisfied = current >= target; break;
+            case 'lte': satisfied = current <= target; break;
+            case 'eq': satisfied = Math.abs(current - target) < 0.0001; break;
+        }
+
+        return {
+            satisfied,
+            currentRatio: current.toFixed(8),
+            reason: satisfied
+                ? `Ratio condition met: ${current.toFixed(6)} ${operator} ${target}`
+                : `Waiting: ${ratioData.tokenA}/${ratioData.tokenB} = ${current.toFixed(6)} (target: ${target})`,
         };
     }
 }

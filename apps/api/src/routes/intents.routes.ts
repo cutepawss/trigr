@@ -163,6 +163,38 @@ router.get('/prices/:token', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /intents/ratio/:tokenA/:tokenB
+ * Get current ratio between two tokens (PUBLIC)
+ * Example: /ratio/ETH/BTC returns how many BTC per 1 ETH
+ */
+router.get('/ratio/:tokenA/:tokenB', async (req: Request, res: Response) => {
+    try {
+        const { tokenA, tokenB } = req.params;
+        const ratioData = await OracleService.getRatio(tokenA, tokenB);
+
+        res.json({
+            success: true,
+            data: {
+                pair: `${ratioData.tokenA}/${ratioData.tokenB}`,
+                ratio: ratioData.ratio.toFixed(8),
+                ratioFormatted: ratioData.ratio < 0.0001
+                    ? ratioData.ratio.toExponential(4)
+                    : ratioData.ratio.toFixed(6),
+                priceA_USD: ratioData.priceA_USD.toFixed(2),
+                priceB_USD: ratioData.priceB_USD.toFixed(2),
+                description: `1 ${ratioData.tokenA} = ${ratioData.ratio.toFixed(6)} ${ratioData.tokenB}`,
+                timestamp: ratioData.timestamp,
+            },
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            success: false,
+            error: { message: error.message },
+        });
+    }
+});
+
+/**
  * GET /intents/nonce/:address
  * Get current nonce for an address (PUBLIC)
  */
@@ -273,23 +305,33 @@ router.post('/', authMiddleware, rateLimitMiddleware, async (req: AuthRequest, r
             });
         }
 
-        // Validate target price for limit orders (must be within ±10% of market)
-        // For limit/stop-loss orders, we're tracking the price of tokenIn (what we're selling)
-        // e.g., sell ETH when ETH drops to $X -> check ETH price
+        // Typo Protection for limit/stop orders
+        // Only block absurd values (10x or 0.1x of current price) to prevent typos
         if (input.type === 'limit' && input.targetPrice) {
-            // Use tokenIn for stop-loss/sell orders (tracking the asset we're selling)
-            const priceToken = input.tokenIn;
+            // Use tokenOut for price check (the asset being bought, e.g., ETH when swapping USDC→ETH)
+            // Target price refers to the output token's price, not the input token
+            const priceToken = input.tokenOut;
             const priceData = await OracleService.getValidatedPrice(priceToken);
             const marketPrice = parseFloat(priceData.price.price);
             const targetPrice = parseFloat(input.targetPrice);
 
-            const deviation = Math.abs(targetPrice - marketPrice) / marketPrice;
-            if (deviation > 0.10) {
+            // Block absurd values: target must be between 0.1x and 10x of market price
+            const ratio = targetPrice / marketPrice;
+            if (ratio > 10) {
                 return res.status(400).json({
                     success: false,
                     error: {
-                        code: 'PRICE_OUT_OF_RANGE',
-                        message: `Target price must be within ±10% of market price ($${marketPrice.toFixed(2)}). Current deviation: ${(deviation * 100).toFixed(1)}%`
+                        code: 'PRICE_TOO_HIGH',
+                        message: `Target price ($${targetPrice.toFixed(2)}) is more than 10x market price ($${marketPrice.toFixed(2)}). Please check for typos.`
+                    },
+                });
+            }
+            if (ratio < 0.1) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'PRICE_TOO_LOW',
+                        message: `Target price ($${targetPrice.toFixed(2)}) is less than 10% of market price ($${marketPrice.toFixed(2)}). Please check for typos.`
                     },
                 });
             }
@@ -450,9 +492,9 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
         }
 
         // Validate new target price if provided (for limit orders)
-        // Use tokenIn for price check (the asset being sold/tracked)
+        // Use tokenOut for price check (the asset being bought/tracked)
         if (targetPrice && intent.type === 'limit') {
-            const priceData = await OracleService.getValidatedPrice(intent.tokenIn);
+            const priceData = await OracleService.getValidatedPrice(intent.tokenOut);
             const marketPrice = parseFloat(priceData.price.price);
             const newTarget = parseFloat(targetPrice);
 
